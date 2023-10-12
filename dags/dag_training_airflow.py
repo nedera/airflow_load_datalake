@@ -11,8 +11,8 @@ from include.scripts.python import worker
 
 DEFAULT_ARGS = {
     'owner': 'Ned',
-    'retries': 3,
-    'retry_delay': timedelta(minutes=5)
+    # 'retries': 3,
+    # 'retry_delay': timedelta(minutes=5)
 }
 
 # table_name_db : value_in_data
@@ -37,7 +37,7 @@ def filtering_customer_consumption_backup():
     
     ### Check file is available IF yes continue flow, else wait for retry ###
     @task()
-    def is_file_available():
+    def is_file_available(retries= 3, retry_delay=timedelta(minutes=5)):
         # path = f'./include/resources/data/raw/consumption_{TODAY_DATE}.csv'
         path = f'./include/resources/data/raw/consumption_yyyymmdd.csv'
         if os.path.exists(path):
