@@ -11,6 +11,7 @@ from include.scripts.python import worker
 
 DEFAULT_ARGS = {
     'owner': 'Ned',
+    'provide_context': True
     # 'retries': 3,
     # 'retry_delay': timedelta(minutes=5)
 }
@@ -58,13 +59,12 @@ def filtering_customer_consumption_backup():
     @task()
     def transform(data_json):
         file_paths = worker.transform(data_json)
-        return file_paths
-    
+        return [{'transformed_data_path': path} for path in file_paths]
+
     ### Load data to datalake and delete temp files ###
     @task()
     def load(transformed_data_path: list):
-        for path in transformed_data_path:
-            worker.load(path, PG_HOOK)
+            worker.load(transformed_data_path, PG_HOOK)
 
     ### Check how many records are inserted? ###
     @task()
@@ -80,9 +80,8 @@ def filtering_customer_consumption_backup():
     file_path = is_file_available()
     data_json = extract(file_path)
     transformed_data_path = transform(data_json)
-
     create_db = create_db.expand_kwargs([{'table_name': x} for x in CATEGORY_MAPPING.keys()])
-    file_path >> [create_db, data_json] >> transformed_data_path >> load(transformed_data_path) >> check_inserted_recs()
+    file_path >> [create_db, data_json] >> transformed_data_path >> load.expand_kwargs(transformed_data_path) >> check_inserted_recs()
 
 training_dag = filtering_customer_consumption_backup()
 
