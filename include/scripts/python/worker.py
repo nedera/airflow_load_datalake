@@ -1,10 +1,12 @@
 import pandas as pd 
 import numpy as np
 from datetime import datetime
-import os
+from io import BytesIO
 import pytz
-
+import psycopg2
 from psycopg2.extensions import register_adapter, AsIs
+import os
+
 register_adapter(np.int64, AsIs)
 
 COL_type={
@@ -46,14 +48,49 @@ def transform(data_json:str) -> list:
         file_paths.append(path)
     return file_paths
 
+# def load(transformed_data_path: str, pg_hook):
+#     table_name = f"consumption_{transformed_data_path.replace(TMP_PATH, '').replace('.csv', '')}_yyyymmdd"
+#     target_columns = ['category', 'sub_category', 'aggregation_date', 'millions_of_dollar', 'pipeline_exc_datetime']
+#     df = pd.read_csv(f"{transformed_data_path}")[target_columns]
+#     df['millions_of_dollar'] = df['millions_of_dollar'].astype(int)
+#     data_to_insert = [tuple(row) for row in \
+#                       df.to_records(index=False)]
+#     pg_hook.insert_rows(table=table_name, rows=data_to_insert, target_fields=target_columns, commit_every=1000)
+#     os.remove(transformed_data_path)
+
 def load(transformed_data_path: str, pg_hook):
-    table_name = f"consumption_{transformed_data_path.replace(TMP_PATH, '').replace('.csv', '')}_yyyymmdd"
-    target_columns = ['category', 'sub_category', 'aggregation_date', 'millions_of_dollar', 'pipeline_exc_datetime']
-    df = pd.read_csv(f"{transformed_data_path}")[target_columns]
-    df['millions_of_dollar'] = df['millions_of_dollar'].astype(int)
-    data_to_insert = [tuple(row) for row in \
-                      df.to_records(index=False)]
-    pg_hook.insert_rows(table=table_name, rows=data_to_insert, target_fields=target_columns, commit_every=1000)
+    # Use the PostgresHook to get the connection details
+    connection = pg_hook.get_connection(conn_id='postgres')
+    # Define the database connection parameters
+    db_params = {
+        'database': connection.schema,  # or connection.extra_dejson['database'] if you use a custom parameter
+        'user': connection.login,
+        'password': connection.password,
+        'host': connection.host,
+        'port': connection.port
+    }
+    # Read a CSV file into a DataFrame
+    df = pd.read_csv(transformed_data_path)
+    # Convert the DataFrame to a binary CSV format in memory
+    binary_csv_data = BytesIO()
+    df.to_csv(binary_csv_data, index=False, encoding='utf-8')
+    del df
+    # Reset the stream position for reading
+    binary_csv_data.seek(0)
+
+    # Connect to the PostgreSQL database
+    conn = psycopg2.connect(**db_params)
+    # Create a cursor
+    cur = conn.cursor()
+    # Define the table name where you want to copy the data
+    table_name = table_name = f"consumption_{transformed_data_path.replace(TMP_PATH, '').replace('.csv', '')}_yyyymmdd"
+    # Use the COPY command to copy data from the binary CSV data in memory to the database
+    cur.copy_expert(sql=f"COPY {table_name} FROM stdin CSV HEADER", file=binary_csv_data)
+    # Commit the changes
+    conn.commit()
+    # Close the cursor and connection
+    cur.close()
+    conn.close()
     os.remove(transformed_data_path)
 
 def check_records(table_names: list):
