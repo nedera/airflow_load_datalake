@@ -11,4 +11,4 @@ airflow.cfg
 airflow.db
 notebook/
 venv/
-include/resources/data/tmp/*
+include/resources/data/tmp/!.gitignore
